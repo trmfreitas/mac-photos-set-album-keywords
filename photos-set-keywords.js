@@ -32,25 +32,16 @@ const SKIP_ALBUMS  = getenv("SKIP_ALBUMS",  "").split(",").map(s => s.trim()).fi
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
-const C = {
-  reset:  "\x1b[0m",
-  dim:    "\x1b[2m",
-  cyan:   "\x1b[36m",
-  green:  "\x1b[32m",
-  yellow: "\x1b[33m",
-  red:    "\x1b[31m",
-};
-
 function ts() {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
-function log(msg)  { console.log(`${C.dim}[${ts()}]     ${msg}${C.reset}`); }
-function info(msg) { console.log(`[${ts()}]  ${C.cyan}i${C.reset}  ${msg}`); }
-function ok(msg)   { console.log(`[${ts()}]  ${C.green}v${C.reset}  ${msg}`); }
-function warn(msg) { console.log(`[${ts()}]  ${C.yellow}!${C.reset}  ${msg}`); }
-function fail(msg) { console.log(`[${ts()}]  ${C.red}x${C.reset}  ${msg}`); }
-function sep()     { console.log(`${C.dim}[${ts()}]  ${"─".repeat(55)}${C.reset}`); }
+function log(msg)  { console.log(`[${ts()}]     ${msg}`); }
+function info(msg) { console.log(`[${ts()}]  i  ${msg}`); }
+function ok(msg)   { console.log(`[${ts()}]  v  ${msg}`); }
+function warn(msg) { console.log(`[${ts()}]  !  ${msg}`); }
+function fail(msg) { console.log(`[${ts()}]  x  ${msg}`); }
+function sep()     { console.log(`[${ts()}]  ${"─".repeat(55)}`); }
 
 // ─── Retry helper ─────────────────────────────────────────────────────────────
 // Retries fn up to RETRY_ATTEMPTS times with a fixed 1-second delay between
@@ -76,8 +67,10 @@ function withRetry(label, fn) {
 }
 
 // ─── processAlbum ─────────────────────────────────────────────────────────────
+// album    — JXA album object specifier
+// albumName — string, already resolved
 
-function processAlbum(albumName, mediaItems) {
+function processAlbum(albumName, album) {
   if (albumName.startsWith("SYS-")) {
     log(`Skipping system album: ${albumName}`);
     return;
@@ -98,9 +91,15 @@ function processAlbum(albumName, mediaItems) {
   const newKeyword = `a:${albumName}`;
   let nChanged = 0;
 
-  for (let i = 0; i < mediaItems.length; i++) {
-    const photo = mediaItems[i];
+  // Use album.mediaItems.length (specifier) — do NOT call album.mediaItems()
+  // because that serialises all items into stale JS references.
+  const count = withRetry(`getCount("${albumName}")`, () => album.mediaItems.length);
 
+  for (let i = 0; i < count; i++) {
+    // Fresh live specifier for each photo
+    const photo = album.mediaItems[i];
+
+   
     const currentKeywords = withRetry(
       `getKeywords(photo ${i + 1} in "${albumName}")`,
       () => photo.keywords()
@@ -137,7 +136,7 @@ function processAlbum(albumName, mediaItems) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-function run() {
+function main() {
   const photos = Application("Photos");
 
   sep();
@@ -176,9 +175,8 @@ function run() {
     const albums = withRetry(`getAlbums("${folderName}")`, () => folder.albums());
 
     for (const album of albums) {
-      const albumName  = withRetry(`getAlbumName in "${folderName}"`,  () => album.name());
-      const mediaItems = withRetry(`getMediaItems("${albumName}")`,    () => album.mediaItems());
-      processAlbum(albumName, mediaItems);
+      const albumName = withRetry(`getAlbumName in "${folderName}"`, () => album.name());
+      processAlbum(albumName, album);
     }
   }
 
@@ -188,4 +186,4 @@ function run() {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-run();
+main();
